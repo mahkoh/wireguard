@@ -54,7 +54,7 @@ static int open(struct net_device *dev)
 #endif
 
 	mutex_lock(&wg->device_update_lock);
-	ret = wg_socket_init(wg, wg->incoming_port);
+	ret = wg_socket_init(wg, wg->transit_net, wg->incoming_port);
 	if (ret < 0)
 		goto out;
 	list_for_each_entry (peer, &wg->peer_list, peer_list) {
@@ -112,7 +112,7 @@ static int stop(struct net_device *dev)
 	}
 	mutex_unlock(&wg->device_update_lock);
 	skb_queue_purge(&wg->incoming_handshakes);
-	wg_socket_reinit(wg, NULL, NULL);
+	wg_socket_reinit(wg, NULL, NULL, NULL);
 	return 0;
 }
 
@@ -228,7 +228,7 @@ static void destruct(struct net_device *dev)
 	rtnl_unlock();
 	mutex_lock(&wg->device_update_lock);
 	wg->incoming_port = 0;
-	wg_socket_reinit(wg, NULL, NULL);
+	wg_socket_reinit(wg, NULL, NULL, NULL);
 	wg_allowedips_free(&wg->peer_allowedips, &wg->device_update_lock);
 	/* The final references are cleared in the below calls to destroy_workqueue. */
 	wg_peer_remove_all(wg);
@@ -399,7 +399,9 @@ static int netdevice_notification(struct notifier_block *nb,
 	if (action != NETDEV_REGISTER || dev->netdev_ops != &netdev_ops)
 		return 0;
 
+	mutex_lock(&wg->device_update_lock);
 	wg_device_set_nets(wg, dev_net(dev), wg->transit_net);
+	mutex_unlock(&wg->device_update_lock);
 
 	return 0;
 }
