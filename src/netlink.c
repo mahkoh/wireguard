@@ -169,6 +169,7 @@ err:
 static int get_device_start(struct netlink_callback *cb)
 {
 	struct nlattr **attrs = genl_family_attrbuf(&genl_family);
+	struct net *dev_net = sock_net(cb->skb->sk);
 	struct wireguard_device *wg;
 	int ret;
 
@@ -176,6 +177,8 @@ static int get_device_start(struct netlink_callback *cb)
 			  genl_family.maxattr, device_policy, NULL);
 	if (ret < 0)
 		return ret;
+	if (!netlink_ns_capable(cb->skb, dev_net->user_ns, CAP_NET_ADMIN))
+		return -EPERM;
 	cb->args[2] = (long)kzalloc(sizeof(struct allowedips_cursor),
 				    GFP_KERNEL);
 	if (unlikely(!cb->args[2]))
@@ -477,8 +480,16 @@ out:
 
 static int set_device(struct sk_buff *skb, struct genl_info *info)
 {
-	struct wireguard_device *wg = lookup_interface(info->attrs, skb);
+	struct net *dev_net = sock_net(skb->sk);
+	struct wireguard_device *wg;
 	int ret;
+
+	if (!netlink_ns_capable(skb, dev_net->user_ns, CAP_NET_ADMIN)) {
+		ret = -EPERM;
+		goto out_nodev;
+	}
+
+	wg = lookup_interface(info->attrs, skb);
 
 	if (IS_ERR(wg)) {
 		ret = PTR_ERR(wg);
@@ -581,12 +592,10 @@ struct genl_ops genl_ops[] = {
 		.dumpit = get_device_dump,
 		.done = get_device_done,
 		.policy = device_policy,
-		.flags = GENL_UNS_ADMIN_PERM
 	}, {
 		.cmd = WG_CMD_SET_DEVICE,
 		.doit = set_device,
 		.policy = device_policy,
-		.flags = GENL_UNS_ADMIN_PERM
 	}
 };
 
